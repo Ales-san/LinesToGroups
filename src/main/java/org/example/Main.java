@@ -28,7 +28,7 @@ public class Main {
         findAllGroups(lines, lineGroups, groups, corrTable);
         // sort groups by size
         groups.sort(Comparator.comparingInt(Set::size));
-//        logTimeFromStart(startTime, "End of calculating groups");
+        logTimeFromStart(startTime, "End of calculating groups");
 
         // write down results of program
         writeResultsToFile(args[0], "output.txt", linesOffsets, groups);
@@ -36,7 +36,7 @@ public class Main {
     }
 
     public static void logTimeFromStart(long startTime, String event) {
-//        System.out.println(event);
+        System.out.println(event);
         long endTime = System.currentTimeMillis();
         System.out.println("That took " + (endTime - startTime) + " milliseconds");
     }
