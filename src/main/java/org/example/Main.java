@@ -10,15 +10,16 @@ public class Main {
             System.out.println("Не указано имя файла с исходными данными!");
             return;
         }
-
         // read all data and process it
+        List<Long> linesOffsets = new ArrayList<>();
+        linesOffsets.add(0L);
         List<List<Long>> lines = new ArrayList<>();
-        readAndProcessData(args[0], lines);
+        readAndProcessData(args[0], linesOffsets, lines);
 //        logTimeFromStart(startTime, "End of reading and processing data!");
 
         // get all information about same values in the same columns but from different lines
         List<Map<Long, List<Integer>>> corrTable = new ArrayList<>();
-        List<Integer> lineGroups = new ArrayList<>(lines.size());
+        List<Integer> lineGroups = new ArrayList<>(linesOffsets.size());
         getConnections(lines, lineGroups, corrTable);
 //        logTimeFromStart(startTime, "End of parsing data and making table of connections!");
 
@@ -30,7 +31,7 @@ public class Main {
 //        logTimeFromStart(startTime, "End of calculating groups");
 
         // write down results of program
-        writeResultsToFile("output.txt", lines, groups);
+        writeResultsToFile(args[0], "output.txt", linesOffsets, groups);
         logTimeFromStart(startTime, "End of program");
     }
 
@@ -40,14 +41,15 @@ public class Main {
         System.out.println("That took " + (endTime - startTime) + " milliseconds");
     }
 
-    public static void readAndProcessData(String inputFileName, List<List<Long>> lines) {
+    public static void readAndProcessData(String inputFileName, List<Long> linesOffsets, List<List<Long>> lines) {
         // create reader
-        try (BufferedReader reader = new BufferedReader(new FileReader(inputFileName))) {
+        try (RandomAccessFile reader = new RandomAccessFile(inputFileName, "r")) {
             String line;
             Set<Integer> setOfLinesHashCodes = new HashSet<>();
             // read line
             while ((line = reader.readLine()) != null) {
                 // parse and write data in lines list
+                linesOffsets.add(reader.getFilePointer());
                 processLine(line, lines, setOfLinesHashCodes);
             }
         } catch (IOException e) {
@@ -62,22 +64,29 @@ public class Main {
         //  line.matches(".*\\d.*") ->
         //      this for the way to not skip lines with empty values - as each line of this type should be in its own group
         Integer lineHashCode = line.hashCode();
-        if (setOfLines.contains(lineHashCode) && line.matches(".*\\d.*")) {
+        if (setOfLines.contains(lineHashCode) && line.matches(".*\\d.*") || line.isBlank()) {
+            lines.add(new ArrayList<>());
             return;
         }
 
         // split elements by ";"
         List<String> elements = new ArrayList<>(Arrays.stream(line.split(";")).toList());
-        List<Long> parsedElements = new ArrayList<>(elements.size());
         if (elements.isEmpty()) {
+            lines.add(new ArrayList<>());
             return;
         }
+        List<Long> parsedElements = new ArrayList<>(elements.size());
         // for every element:
         for (int i = 0; i < elements.size(); i++) {
             String element = elements.get(i);
             // check if element is in right format
             //  (regular expression was made on the basis of lng.txt)
-            if (!element.matches("\"\\d*\"")) {
+            if (element.isBlank()) {
+                parsedElements.add(null);
+                continue;
+            }
+            if (!element.matches("\"[0-9]{0,13}(\\.[0-9]*)?\"")) {
+                lines.add(new ArrayList<>());
                 return;
             } else {
                 // parse element and add to list
@@ -98,11 +107,13 @@ public class Main {
     public static void getConnections(List<List<Long>> lines, List<Integer> lineGroups,
                                       List<Map<Long, List<Integer>>> corrTable) {
         for (int i = 0; i < lines.size(); i++) {
-            // initialize group for every line with default value: -1
-            lineGroups.add(-1);
+            List<Long> line = lines.get(i);
+            // initialize group for every line with -1 if group has elements and -2 if it has no
+            lineGroups.add(line.isEmpty() ? -2 : -1);
+
             // for every column collect unique values and mark in which lines they are
-            for (int j = 0; j < lines.get(i).size(); j++) {
-                Long element = lines.get(i).get(j);
+            for (int j = 0; j < line.size(); j++) {
+                Long element = line.get(j);
                 // initialize map for column
                 if (corrTable.size() < j + 1) {
                     corrTable.add(new HashMap<>());
@@ -174,9 +185,10 @@ public class Main {
         }
     }
 
-    public static void writeResultsToFile(String outputFileName, List<List<Long>> lines, List<Set<Integer>> groups) {
+    public static void writeResultsToFile(String inputFileName, String outputFileName, List<Long> linesOffsets, List<Set<Integer>> groups) {
         // create writer
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(outputFileName))) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(outputFileName));
+            RandomAccessFile reader = new RandomAccessFile(inputFileName, "r")) {
             // write number of groups with more than one element
             for (int i = 0; i < groups.size(); i++) {
                 if (groups.get(i).size() > 1) {
@@ -190,18 +202,9 @@ public class Main {
                 writer.write("Группа № " + (groups.size() - groupNumber));
                 writer.newLine();
                 for (int lineNumber : groups.get(groupNumber)) {
-                    List<Long> line = lines.get(lineNumber);
-                    for (int i = 0; i < line.size(); i++) {
-                        Long el = line.get(i);
-                        if (el != null) {
-                            writer.write("\"" + el + "\"");
-                        } else {
-                            writer.write("\"\"");
-                        }
-                        if (i < line.size() - 1) {
-                            writer.write(";");
-                        }
-                    }
+                    reader.seek(linesOffsets.get(lineNumber));
+                    String line = reader.readLine();
+                    writer.write(line);
                     writer.newLine();
                 }
             }
